@@ -5,6 +5,10 @@ on:
     - cron: '*/30 * * * *' # every 30 minutes
   workflow_dispatch: # Trigger manually
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
