@@ -14,3 +14,5 @@ jobs:
           owner: Abirdcfly
           base: master
           head: master
+          pr_title: Sync with hyperledger-labs/fabric-operator
+          pr_message: If there is a conflict, it is recommended to manually merge the conflicting commits, and then manually execute the sync github action.
