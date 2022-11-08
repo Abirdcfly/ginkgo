@@ -1,0 +1,16 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # every 30 minutes
+  workflow_dispatch: # Trigger manually
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: tgymnich/fork-sync@v1.6.3
+        with:
+          owner: Abirdcfly
+          base: master
+          head: master
