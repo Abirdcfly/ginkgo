@@ -21,11 +21,14 @@ var _ = Describe("Table driven tests", func() {
 
 	Describe("constructing tables", func() {
 		BeforeEach(func() {
-			entrySlice := []TableEntry{
-				Entry("C", 1, 2), Entry("D", 1, 1),
-			}
 			success, _ := RunFixture("table happy-path", func() {
-				DescribeTable("hello", bodyFunc, Entry("A", 1, 1), Entry("B", 1, 1), entrySlice)
+				DescribeTable("hello", bodyFunc,
+					Entry("A", 1, 1),
+					Entry("B", 1, 1),
+					[]TableEntry{
+						Entry("C", 1, 2),
+						Entry("D", 1, 1),
+					})
 			})
 			Ω(success).Should(BeFalse())
 		})
@@ -38,6 +41,53 @@ var _ = Describe("Table driven tests", func() {
 			Ω(reporter.Did.Names()).Should(Equal([]string{"A", "B", "C", "D"}))
 			Ω(reporter.Did.Find("C")).Should(HaveFailed("fail", types.NodeTypeIt))
 			Ω(reporter.End).Should(BeASuiteSummary(false, NSpecs(4), NPassed(3), NFailed(1)))
+		})
+	})
+
+	Describe("constructing subtree tables", func() {
+		BeforeEach(func() {
+			success, _ := RunFixture("table subtree happy-path", func() {
+				DescribeTableSubtree("hello", func(a, b, sum, difference int) {
+					var actualSum, actualDifference int
+					BeforeEach(func() {
+						rt.Run(CurrentSpecReport().ContainerHierarchyTexts[1] + " bef")
+						actualSum = a + b
+						actualDifference = a - b
+					})
+					It(fmt.Sprintf("%d + %d sums correctly", a, b), func() {
+						rt.Run(CurrentSpecReport().ContainerHierarchyTexts[1] + " sum")
+						if actualSum != sum {
+							F("fail")
+						}
+					})
+					It(fmt.Sprintf("%d - %d subtracts correctly", a, b), func() {
+						rt.Run(CurrentSpecReport().ContainerHierarchyTexts[1] + " difference")
+						if actualDifference != difference {
+							F("fail")
+						}
+					})
+				}, func(a, b, sum, differenct int) string { return fmt.Sprintf("%d,%d", a, b) },
+					Entry(nil, 1, 1, 2, 0),
+					Entry(nil, 1, 2, 3, -1),
+					Entry(nil, 2, 1, 0, 0),
+				)
+			})
+			Ω(success).Should(BeFalse())
+		})
+
+		It("runs all the entries", func() {
+			Ω(rt).Should(HaveTracked("1,1 bef", "1,1 sum", "1,1 bef", "1,1 difference", "1,2 bef", "1,2 sum", "1,2 bef", "1,2 difference", "2,1 bef", "2,1 sum", "2,1 bef", "2,1 difference"))
+		})
+
+		It("reports on the tests correctly", func() {
+			Ω(reporter.Did.Names()).Should(Equal([]string{"1 + 1 sums correctly", "1 - 1 subtracts correctly", "1 + 2 sums correctly", "1 - 2 subtracts correctly", "2 + 1 sums correctly", "2 - 1 subtracts correctly"}))
+			Ω(reporter.Did.Find("1 + 1 sums correctly")).Should(HavePassed())
+			Ω(reporter.Did.Find("1 - 1 subtracts correctly")).Should(HavePassed())
+			Ω(reporter.Did.Find("1 + 2 sums correctly")).Should(HavePassed())
+			Ω(reporter.Did.Find("1 - 2 subtracts correctly")).Should(HavePassed())
+			Ω(reporter.Did.Find("2 + 1 sums correctly")).Should(HaveFailed("fail", types.NodeTypeIt))
+			Ω(reporter.Did.Find("2 - 1 subtracts correctly")).Should(HaveFailed("fail", types.NodeTypeIt))
+			Ω(reporter.End).Should(BeASuiteSummary(false, NSpecs(6), NPassed(4), NFailed(2)))
 		})
 	})
 
@@ -298,6 +348,7 @@ var _ = Describe("Table driven tests", func() {
 			Ω(b).Should(Equal(c[1]))
 			Ω(c[2]).Should(BeNil())
 		}, Entry("variadic arguments", 1, "one", 1, "one", nil))
+
 	})
 
 	Describe("when table entries are marked pending", func() {

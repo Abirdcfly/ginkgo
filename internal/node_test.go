@@ -36,6 +36,7 @@ var _ = Describe("Partitioning Decorations", func() {
 			Pending,
 			Serial,
 			Ordered,
+			ContinueOnFailure,
 			SuppressProgressReporting,
 			NodeTimeout(time.Second),
 			GracePeriod(time.Second),
@@ -63,6 +64,7 @@ var _ = Describe("Partitioning Decorations", func() {
 			Pending,
 			Serial,
 			Ordered,
+			ContinueOnFailure,
 			SuppressProgressReporting,
 			NodeTimeout(time.Second),
 			GracePeriod(time.Second),
@@ -114,7 +116,7 @@ var _ = Describe("Constructing nodes", func() {
 
 	Describe("happy path", func() {
 		It("creates a node with a non-zero id", func() {
-			node, errors := internal.NewNode(dt, ntIt, "text", body, cl, Focus, Label("A", "B", "C"), SuppressProgressReporting)
+			node, errors := internal.NewNode(dt, ntIt, "text", body, cl, Focus, Label("A", "B", "C"))
 			Ω(node.ID).Should(BeNumerically(">", 0))
 			Ω(node.NodeType).Should(Equal(ntIt))
 			Ω(node.Text).Should(Equal("text"))
@@ -124,7 +126,6 @@ var _ = Describe("Constructing nodes", func() {
 			Ω(node.MarkedFocus).Should(BeTrue())
 			Ω(node.MarkedPending).Should(BeFalse())
 			Ω(node.NestingLevel).Should(Equal(-1))
-			Ω(node.MarkedSuppressProgressReporting).Should(BeTrue())
 			Ω(node.Labels).Should(Equal(Labels{"A", "B", "C"}))
 			Ω(node.HasContext).Should(BeFalse())
 			ExpectAllWell(errors)
@@ -141,7 +142,7 @@ var _ = Describe("Constructing nodes", func() {
 			Ω(node.ID).Should(BeNumerically(">", 0))
 			Ω(node.NodeType).Should(Equal(types.NodeTypeReportBeforeEach))
 
-			node.ReportEachBody(types.SpecReport{})
+			node.ReportEachBody(internal.NewSpecContext(nil), types.SpecReport{})
 			Ω(didRun).Should(BeTrue())
 
 			Ω(node.Body).Should(BeNil())
@@ -161,7 +162,7 @@ var _ = Describe("Constructing nodes", func() {
 			Ω(node.ID).Should(BeNumerically(">", 0))
 			Ω(node.NodeType).Should(Equal(types.NodeTypeReportAfterEach))
 
-			node.ReportEachBody(types.SpecReport{})
+			node.ReportEachBody(internal.NewSpecContext(nil), types.SpecReport{})
 			Ω(didRun).Should(BeTrue())
 
 			Ω(node.Body).Should(BeNil())
@@ -195,7 +196,7 @@ var _ = Describe("Constructing nodes", func() {
 				cl := types.NewCodeLocation(2)
 				cl2 := types.NewCustomCodeLocation("hi")
 				node, errors := internal.NewNode(dt, ntIt, "text", body, cl2, Offset(1))
-				//note that Offset overrides cl2
+				// note that Offset overrides cl2
 				Ω(node.CodeLocation.FileName).Should(Equal(cl.FileName))
 				ExpectAllWell(errors)
 			})
@@ -307,6 +308,31 @@ var _ = Describe("Constructing nodes", func() {
 		})
 	})
 
+	Describe("the ContinueOnFailure decoration", func() {
+		It("the node is not MarkedContinueOnFailure by default", func() {
+			node, errors := internal.NewNode(dt, ntCon, "", body)
+			Ω(node.MarkedContinueOnFailure).Should(BeFalse())
+			ExpectAllWell(errors)
+		})
+		It("marks the node as ContinueOnFailure", func() {
+			node, errors := internal.NewNode(dt, ntCon, "", body, Ordered, ContinueOnFailure)
+			Ω(node.MarkedContinueOnFailure).Should(BeTrue())
+			ExpectAllWell(errors)
+		})
+		It("does not allow non-container nodes to be marked", func() {
+			node, errors := internal.NewNode(dt, ntBef, "", body, cl, ContinueOnFailure)
+			Ω(node).Should(BeZero())
+			Ω(errors).Should(ContainElement(types.GinkgoErrors.InvalidDecoratorForNodeType(cl, ntBef, "ContinueOnFailure")))
+			Ω(dt.DidTrackDeprecations()).Should(BeFalse())
+		})
+		It("does not allow non-Ordered container nodes to be marked", func() {
+			node, errors := internal.NewNode(dt, ntCon, "", body, cl, ContinueOnFailure)
+			Ω(node).Should(BeZero())
+			Ω(errors).Should(ConsistOf(types.GinkgoErrors.InvalidContinueOnFailureDecoration(cl)))
+			Ω(dt.DidTrackDeprecations()).Should(BeFalse())
+		})
+	})
+
 	Describe("the OncePerOrdered decoration", func() {
 		It("applies to setup nodes, only", func() {
 			for _, nt := range []types.NodeType{ntBef, ntAf, ntJusAf, ntJusBef} {
@@ -384,37 +410,6 @@ var _ = Describe("Constructing nodes", func() {
 		})
 	})
 
-	Describe("the SuppressProgressReporting decoration", func() {
-		It("the node does not SuppressProgressReporting by default", func() {
-			node, errors := internal.NewNode(dt, ntIt, "text", body)
-			Ω(node.MarkedSuppressProgressReporting).Should(BeFalse())
-			ExpectAllWell(errors)
-		})
-		It("marks the node as SuppressProgressReporting", func() {
-			node, errors := internal.NewNode(dt, ntIt, "", body, SuppressProgressReporting)
-			Ω(node.MarkedSuppressProgressReporting).Should(BeTrue())
-			ExpectAllWell(errors)
-		})
-		It("does not allow container nodes to be marked", func() {
-			node, errors := internal.NewNode(dt, ntCon, "", body, cl, SuppressProgressReporting)
-			Ω(node).Should(BeZero())
-			Ω(errors).Should(ConsistOf(types.GinkgoErrors.InvalidDecoratorForNodeType(cl, ntCon, "SuppressProgressReporting")))
-			Ω(dt.DidTrackDeprecations()).Should(BeFalse())
-
-			node, errors = internal.NewNode(dt, ntIt, "text", body, cl, SuppressProgressReporting)
-			Ω(node.MarkedSuppressProgressReporting).Should(BeTrue())
-			ExpectAllWell(errors)
-
-			node, errors = internal.NewNode(dt, ntBef, "", body, cl, SuppressProgressReporting)
-			Ω(node.MarkedSuppressProgressReporting).Should(BeTrue())
-			ExpectAllWell(errors)
-
-			node, errors = internal.NewNode(dt, types.NodeTypeReportAfterEach, "", func(_ SpecReport) {}, cl, SuppressProgressReporting)
-			Ω(node.MarkedSuppressProgressReporting).Should(BeTrue())
-			ExpectAllWell(errors)
-		})
-	})
-
 	Describe("The Label decoration", func() {
 		It("has no labels by default", func() {
 			node, errors := internal.NewNode(dt, ntIt, "text", body)
@@ -449,9 +444,9 @@ var _ = Describe("Constructing nodes", func() {
 		})
 
 		It("validates labels", func() {
-			node, errors := internal.NewNode(dt, ntIt, "", body, cl, Label("A", "B&C", "C,D", "C,D ", "  "))
+			node, errors := internal.NewNode(dt, ntIt, "", body, cl, Label("A", "B&C", "C,D", "C,D ", "  ", ":Foo"))
 			Ω(node).Should(BeZero())
-			Ω(errors).Should(ConsistOf(types.GinkgoErrors.InvalidLabel("B&C", cl), types.GinkgoErrors.InvalidLabel("C,D", cl), types.GinkgoErrors.InvalidLabel("C,D ", cl), types.GinkgoErrors.InvalidEmptyLabel(cl)))
+			Ω(errors).Should(ConsistOf(types.GinkgoErrors.InvalidLabel("B&C", cl), types.GinkgoErrors.InvalidLabel("C,D", cl), types.GinkgoErrors.InvalidLabel("C,D ", cl), types.GinkgoErrors.InvalidEmptyLabel(cl), types.GinkgoErrors.InvalidLabel(":Foo", cl)))
 			Ω(dt.DidTrackDeprecations()).Should(BeFalse())
 		})
 	})
@@ -506,6 +501,16 @@ var _ = Describe("Constructing nodes", func() {
 				))
 				Ω(dt.DidTrackDeprecations()).Should(BeTrue())
 			}
+		})
+	})
+
+	Describe("the SuppressProgressReporting decorator", func() {
+		It("is deprecated", func() {
+			node, errors := internal.NewNode(dt, ntIt, "spec", func() {}, cl, SuppressProgressReporting)
+			Ω(node).ShouldNot(BeZero())
+			Ω(errors).Should(BeEmpty())
+			Ω(dt.DidTrackDeprecations()).Should(BeTrue())
+			Ω(dt.DeprecationsReport()).Should(ContainSubstring("SuppressProgressReporting is no longer necessary"))
 		})
 	})
 
@@ -650,7 +655,7 @@ var _ = Describe("Constructing nodes", func() {
 })
 
 var _ = Describe("Node", func() {
-	//HERE - and all the fun edge cases
+	// HERE - and all the fun edge cases
 	Describe("The nodes that take more specific functions", func() {
 		var dt *types.DeprecationTracker
 		BeforeEach(func() {
@@ -856,7 +861,7 @@ var _ = Describe("Node", func() {
 				Ω(node.ID).Should(BeNumerically(">", 0))
 				Ω(node.NodeType).Should(Equal(types.NodeTypeReportAfterSuite))
 
-				node.ReportAfterSuiteBody(types.Report{})
+				node.ReportSuiteBody(internal.NewSpecContext(nil), types.Report{})
 				Ω(didRun).Should(BeTrue())
 
 				Ω(node.CodeLocation).Should(Equal(cl))
@@ -867,6 +872,30 @@ var _ = Describe("Node", func() {
 				node, errors := internal.NewNode(dt, types.NodeTypeReportAfterSuite, "my custom report", func(types.Report) {}, func() {}, cl)
 				Ω(node).Should(BeZero())
 				Ω(errors).Should(ConsistOf(types.GinkgoErrors.MultipleBodyFunctions(cl, types.NodeTypeReportAfterSuite)))
+			})
+		})
+
+		Describe("ReportBeforeSuiteNode", func() {
+			It("returns a correctly configured node", func() {
+				var didRun bool
+				body := func(types.Report) { didRun = true }
+				node, errors := internal.NewNode(dt, types.NodeTypeReportBeforeSuite, "", body, cl)
+				Ω(errors).Should(BeEmpty())
+				Ω(node.Text).Should(BeEmpty())
+				Ω(node.ID).Should(BeNumerically(">", 0))
+				Ω(node.NodeType).Should(Equal(types.NodeTypeReportBeforeSuite))
+
+				node.ReportSuiteBody(internal.NewSpecContext(nil), types.Report{})
+				Ω(didRun).Should(BeTrue())
+
+				Ω(node.CodeLocation).Should(Equal(cl))
+				Ω(node.NestingLevel).Should(Equal(-1))
+			})
+
+			It("errors if passed too many functions", func() {
+				node, errors := internal.NewNode(dt, types.NodeTypeReportBeforeSuite, "", func(types.Report) {}, func() {}, cl)
+				Ω(node).Should(BeZero())
+				Ω(errors).Should(ConsistOf(types.GinkgoErrors.MultipleBodyFunctions(cl, types.NodeTypeReportBeforeSuite)))
 			})
 		})
 
@@ -894,18 +923,6 @@ var _ = Describe("Node", func() {
 				})
 			})
 
-			Context("when passed a function that returns too many values", func() {
-				It("errors", func() {
-					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() (int, error) {
-						return 0, nil
-					})
-					Ω(node.IsZero()).Should(BeTrue())
-					Ω(errs).Should(ConsistOf(types.GinkgoErrors.DeferCleanupInvalidFunction(cl)))
-					Ω(capturedFailure).Should(BeZero())
-					Ω(capturedCL).Should(BeZero())
-				})
-			})
-
 			Context("when passed a function that does not return", func() {
 				It("creates a body that runs the function and never calls the fail handler", func() {
 					didRun := false
@@ -922,13 +939,12 @@ var _ = Describe("Node", func() {
 					Ω(capturedCL).Should(BeZero())
 				})
 			})
-
-			Context("when passed a function that returns nil", func() {
-				It("creates a body that runs the function and does not call the fail handler", func() {
+			Context("when passed a function that returns somethign that isn't an error", func() {
+				It("creates a body that runs the function and never calls the fail handler", func() {
 					didRun := false
-					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() error {
+					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() (string, int) {
 						didRun = true
-						return nil
+						return "not-an-error", 17
 					})
 					Ω(node.CodeLocation).Should(Equal(cl))
 					Ω(node.NodeType).Should(Equal(types.NodeTypeCleanupInvalid))
@@ -941,12 +957,30 @@ var _ = Describe("Node", func() {
 				})
 			})
 
-			Context("when passed a function that returns an error", func() {
+			Context("when passed a function that returns a nil error", func() {
 				It("creates a body that runs the function and does not call the fail handler", func() {
 					didRun := false
-					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() error {
+					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() (string, int, error) {
 						didRun = true
-						return fmt.Errorf("welp")
+						return "not-an-error", 17, nil
+					})
+					Ω(node.CodeLocation).Should(Equal(cl))
+					Ω(node.NodeType).Should(Equal(types.NodeTypeCleanupInvalid))
+					Ω(errs).Should(BeEmpty())
+
+					node.Body(internal.NewSpecContext(nil))
+					Ω(didRun).Should(BeTrue())
+					Ω(capturedFailure).Should(BeZero())
+					Ω(capturedCL).Should(BeZero())
+				})
+			})
+
+			Context("when passed a function that returns an error for its final return value", func() {
+				It("creates a body that runs the function and calls the fail handler", func() {
+					didRun := false
+					node, errs := internal.NewCleanupNode(dt, failFunc, cl, func() (string, int, error) {
+						didRun = true
+						return "not-an-error", 17, fmt.Errorf("welp")
 					})
 					Ω(node.CodeLocation).Should(Equal(cl))
 					Ω(node.NodeType).Should(Equal(types.NodeTypeCleanupInvalid))
@@ -1147,6 +1181,22 @@ var _ = Describe("Node", func() {
 })
 
 var _ = Describe("Nodes", func() {
+	Describe("Clone", func() {
+		var n1, n2, n3, n4 Node
+
+		BeforeEach(func() {
+			n1, n2, n3, n4 = N(), N(), N(), N()
+		})
+
+		It("clones the slice", func() {
+			original := Nodes{n1, n2, n3}
+			clone := original.Clone()
+			Ω(original).Should(Equal(clone))
+			clone[2] = n4
+			Ω(original).Should(Equal(Nodes{n1, n2, n3}))
+		})
+	})
+
 	Describe("CopyAppend", func() {
 		var n1, n2, n3, n4 Node
 
@@ -1545,6 +1595,22 @@ var _ = Describe("Nodes", func() {
 		})
 	})
 
+	Describe("IndexOfFirstNodeMarkedOrdered", func() {
+		Context("when there are nodes marked ordered", func() {
+			It("returns the index of the first one", func() {
+				nodes := Nodes{N(), N("A", ntCon, Ordered), N("B", ntCon, Ordered), N()}
+				Ω(nodes.IndexOfFirstNodeMarkedOrdered()).Should(Equal(1))
+			})
+		})
+
+		Context("when there is no node marked ordered", func() {
+			It("returns -1", func() {
+				nodes := Nodes{N(), N(), N()}
+				Ω(nodes.IndexOfFirstNodeMarkedOrdered()).Should(Equal(-1))
+			})
+		})
+	})
+
 	Describe("GetMaxFlakeAttempts", func() {
 		Context("when there is no node marked with FlakeAttempts decorator", func() {
 			It("returns 0", func() {
@@ -1586,6 +1652,22 @@ var _ = Describe("Nodes", func() {
 			})
 		})
 
+	})
+
+	Describe("Labels", func() {
+		It("can match against a filter", func() {
+			Ω(Label().MatchesLabelFilter("")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("dog")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("cat")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("dog && cat")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("dog || cat")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("!fish")).Should(BeTrue())
+			Ω(Label("dog", "cat").MatchesLabelFilter("fish")).Should(BeFalse())
+			Ω(Label("dog", "cat").MatchesLabelFilter("!dog")).Should(BeFalse())
+			Ω(func() {
+				Label("dog", "cat").MatchesLabelFilter("!")
+			}).Should(Panic())
+		})
 	})
 })
 

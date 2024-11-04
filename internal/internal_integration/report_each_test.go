@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2/internal/test_helpers"
 	"github.com/onsi/ginkgo/v2/types"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 )
 
 var _ = Describe("Sending reports to ReportBeforeEach and ReportAfterEach nodes", func() {
@@ -97,6 +98,17 @@ var _ = Describe("Sending reports to ReportBeforeEach and ReportAfterEach nodes"
 						reports["interrupt"] = append(reports["interrupt"], report)
 					})
 				})
+				Context("when a after each reporter times out", func() {
+					It("passes", rt.T("passes"))
+					ReportAfterEach(func(ctx SpecContext, report types.SpecReport) {
+						select {
+						case <-ctx.Done():
+							rt.Run("timeout-reporter")
+							reports["timeout"] = append(reports["timeout"], report)
+						case <-time.After(100 * time.Millisecond):
+						}
+					}, NodeTimeout(10*time.Millisecond))
+				})
 			})
 			ReportBeforeEach(func(report types.SpecReport) {
 				rt.Run("outer-RBE")
@@ -113,15 +125,16 @@ var _ = Describe("Sending reports to ReportBeforeEach and ReportAfterEach nodes"
 			"outer-RBE", "inner-RBE", "passes", "inner-RAE", "outer-RAE",
 			"outer-RBE", "inner-RBE", "fails", "inner-RAE", "outer-RAE",
 			"outer-RBE", "inner-RBE", "panics", "inner-RAE", "outer-RAE",
-			"outer-RBE", "inner-RBE", "inner-RAE", "outer-RAE", //pending test
+			"outer-RBE", "inner-RBE", "inner-RAE", "outer-RAE", // pending test
 			"outer-RBE", "inner-RBE", "skipped", "inner-RAE", "outer-RAE",
-			"outer-RBE", "inner-RBE", "inner-RAE", "outer-RAE", //flag-skipped test
+			"outer-RBE", "inner-RBE", "inner-RAE", "outer-RAE", // flag-skipped test
 			"outer-RBE", "inner-RBE", "also-passes", "failing-RAE", "inner-RAE", "outer-RAE",
-			"outer-RBE", "inner-RBE", "failing-in-skip-RAE", "inner-RAE", "outer-RAE", //is also flag-skipped
+			"outer-RBE", "inner-RBE", "failing-in-skip-RAE", "inner-RAE", "outer-RAE", // is also flag-skipped
 			"outer-RBE", "inner-RBE", "writer", "writing-reporter", "inner-RAE", "outer-RAE",
 			"outer-RBE", "inner-RBE", "failing-RBE", "not-failing-RBE", "inner-RAE", "outer-RAE",
 			"outer-RBE", "inner-RBE", "passes-yet-again", "inner-RAE", "outer-RAE",
-			"outer-RBE", "inner-RBE", "interrupt-reporter", "inner-RAE", "outer-RAE", //skipped by interrupt
+			"outer-RBE", "inner-RBE", "interrupt-reporter", "inner-RAE", "outer-RAE", // skipped by interrupt
+			"outer-RBE", "inner-RBE", "timeout-reporter", "inner-RAE", "outer-RAE", // skipped by timeout
 			"after-suite",
 		))
 	})
@@ -132,9 +145,19 @@ var _ = Describe("Sending reports to ReportBeforeEach and ReportAfterEach nodes"
 	})
 
 	It("submits the correct reports to the reporters", func() {
+		format.MaxLength = 10000
 		for _, name := range []string{"passes", "fails", "panics", "is Skip()ed", "is flag-skipped", "is also flag-skipped"} {
-			Ω(reports["outer-RAE"].Find(name)).Should(Equal(reporter.Did.Find(name)))
-			Ω(reports["inner-RAE"].Find(name)).Should(Equal(reporter.Did.Find(name)))
+
+			expected := reporter.Did.Find(name)
+			expected.SpecEvents = nil
+
+			actual := reports["outer-RAE"].Find(name)
+			actual.SpecEvents = nil
+			Ω(actual).Should(Equal(expected))
+
+			actual = reports["inner-RAE"].Find(name)
+			actual.SpecEvents = nil
+			Ω(actual).Should(Equal(expected))
 		}
 
 		Ω(reports["outer-RBE"].Find("passes")).ShouldNot(BeZero())
@@ -180,7 +203,7 @@ var _ = Describe("Sending reports to ReportBeforeEach and ReportAfterEach nodes"
 		Ω(reports["inner-RAE"].Find("writes stuff").CapturedGinkgoWriterOutput).Should(Equal("GinkgoWriter from It\nGinkgoWriter from ReportAfterEach\n"))
 		Ω(reports["inner-RAE"].Find("writes stuff").CapturedStdOutErr).Should(Equal("Output from It\nOutput from ReportAfterEach\n"))
 
-		//but a report containing the additional output will be send to Ginkgo's reporter...
+		// but a report containing the additional output will be send to Ginkgo's reporter...
 		Ω(reporter.Did.Find("writes stuff").CapturedGinkgoWriterOutput).Should((Equal("GinkgoWriter from It\nGinkgoWriter from ReportAfterEach\n")))
 		Ω(reporter.Did.Find("writes stuff").CapturedStdOutErr).Should((Equal("Output from It\nOutput from ReportAfterEach\n")))
 	})

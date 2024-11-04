@@ -2,6 +2,7 @@ package internal_integration_test
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -98,6 +99,26 @@ var _ = Describe("Cleanup", func() {
 						DeferCleanup(func() error {
 							rt.Run("C-A")
 							return fmt.Errorf("fail")
+						})
+					}))
+				})
+				Ω(success).Should(BeFalse())
+			})
+
+			It("reports a failure", func() {
+				Ω(rt).Should(HaveTracked("BE", "A", "C-A", "C-BE"))
+				Ω(reporter.Did.Find("A")).Should(HaveFailed("DeferCleanup callback returned error: fail", FailureNodeType(types.NodeTypeCleanupAfterEach), types.FailureNodeAtTopLevel))
+			})
+		})
+
+		Context("because of a returned error, for a multi-return function", func() {
+			BeforeEach(func() {
+				success, _ := RunFixture("cleanup failure", func() {
+					BeforeEach(rt.T("BE", C("C-BE")))
+					It("A", rt.T("A", func() {
+						DeferCleanup(func() (string, error) {
+							rt.Run("C-A")
+							return "ok", fmt.Errorf("fail")
 						})
 					}))
 				})
@@ -263,6 +284,31 @@ var _ = Describe("Cleanup", func() {
 
 			It("notes that a cleanup was registered in the AfterAll and runs it", func() {
 				Ω(rt).Should(HaveTracked("A", "AE", "AA", "C-AE", "C-A", "C-AA"))
+			})
+		})
+
+		Context("when cleanup is added in parallel in some goroutines", func() {
+			BeforeEach(func() {
+				success, _ := RunFixture("concurrent cleanup", func() {
+					Context("ordered", Ordered, func() {
+						It("A", func() {
+							wg := &sync.WaitGroup{}
+							wg.Add(5)
+							for i := 0; i < 5; i++ {
+								i := i
+								go func() {
+									DeferCleanup(rt.Run, fmt.Sprintf("dc-%d", i))
+									wg.Done()
+								}()
+							}
+							wg.Wait()
+						})
+					})
+				})
+				Ω(success).Should(BeTrue())
+			})
+			It("doesn't race", func() {
+				Ω(rt.TrackedRuns()).Should(ConsistOf("dc-0", "dc-1", "dc-2", "dc-3", "dc-4"))
 			})
 		})
 	})

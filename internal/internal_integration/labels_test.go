@@ -12,7 +12,7 @@ var _ = Describe("Labels", func() {
 	Describe("when a suite has labelled tests", func() {
 		fixture := func() {
 			Describe("outer container", func() {
-				It("A", rt.T("A"), Focus, Label("cat"))
+				It("A", rt.T("A"), Label("cat"))
 				It("B", rt.T("B"), Label("dog"))
 				Describe("container", Label("cow", "cat"), func() {
 					It("C", rt.T("C"))
@@ -27,10 +27,18 @@ var _ = Describe("Labels", func() {
 						It("H", rt.T("H"), Label("fish", "chicken"))
 					})
 				})
+				Describe("feature container", Label("Feature:Beta"), func() {
+					It("I", rt.T("I"), Label("Feature: Gamma"))
+					Describe("inner container", Label(" feature : alpha "), func() {
+						It("J", rt.T("J"), Label("Feature:Alpha"))
+						It("K", rt.T("K"), Label("Feature:Delta", "Feature:Beta"))
+					})
+
+				})
 			})
 		}
 		BeforeEach(func() {
-			conf.LabelFilter = "TopLevelLabel && (dog || cow)"
+			conf.LabelFilter = "TopLevelLabel && (dog || cow) || Feature: containsAny Alpha"
 			success, hPF := RunFixture("labelled tests", fixture)
 			Ω(success).Should(BeTrue())
 			Ω(hPF).Should(BeFalse())
@@ -68,6 +76,18 @@ var _ = Describe("Labels", func() {
 			Ω(reporter.Did.Find("H").ContainerHierarchyLabels).Should(Equal([][]string{{}, {"giraffe"}, {"cow"}}))
 			Ω(reporter.Did.Find("H").LeafNodeLabels).Should(Equal([]string{"fish", "chicken"}))
 			Ω(reporter.Did.Find("H").Labels()).Should(Equal([]string{"giraffe", "cow", "fish", "chicken"}))
+
+			Ω(reporter.Did.Find("I").ContainerHierarchyLabels).Should(Equal([][]string{{}, {"Feature:Beta"}}))
+			Ω(reporter.Did.Find("I").LeafNodeLabels).Should(Equal([]string{"Feature: Gamma"}))
+			Ω(reporter.Did.Find("I").Labels()).Should(Equal([]string{"Feature:Beta", "Feature: Gamma"}))
+
+			Ω(reporter.Did.Find("J").ContainerHierarchyLabels).Should(Equal([][]string{{}, {"Feature:Beta"}, {"feature : alpha"}}))
+			Ω(reporter.Did.Find("J").LeafNodeLabels).Should(Equal([]string{"Feature:Alpha"}))
+			Ω(reporter.Did.Find("J").Labels()).Should(Equal([]string{"Feature:Beta", "feature : alpha", "Feature:Alpha"}))
+
+			Ω(reporter.Did.Find("K").ContainerHierarchyLabels).Should(Equal([][]string{{}, {"Feature:Beta"}, {"feature : alpha"}}))
+			Ω(reporter.Did.Find("K").LeafNodeLabels).Should(Equal([]string{"Feature:Delta", "Feature:Beta"}))
+			Ω(reporter.Did.Find("K").Labels()).Should(Equal([]string{"Feature:Beta", "feature : alpha", "Feature:Delta"}))
 		})
 
 		It("includes suite labels in the suite report", func() {
@@ -76,11 +96,11 @@ var _ = Describe("Labels", func() {
 		})
 
 		It("honors the LabelFilter config and skips tests appropriately", func() {
-			Ω(rt).Should(HaveTracked("B", "C", "D", "F", "H"))
-			Ω(reporter.Did.WithState(types.SpecStatePassed).Names()).Should(ConsistOf("B", "C", "D", "F", "H"))
-			Ω(reporter.Did.WithState(types.SpecStateSkipped).Names()).Should(ConsistOf("A", "E"))
+			Ω(rt).Should(HaveTracked("B", "C", "D", "F", "H", "J", "K"))
+			Ω(reporter.Did.WithState(types.SpecStatePassed).Names()).Should(ConsistOf("B", "C", "D", "F", "H", "J", "K"))
+			Ω(reporter.Did.WithState(types.SpecStateSkipped).Names()).Should(ConsistOf("A", "E", "I"))
 			Ω(reporter.Did.WithState(types.SpecStatePending).Names()).Should(ConsistOf("G"))
-			Ω(reporter.End).Should(BeASuiteSummary(true, NPassed(5), NSkipped(2), NPending(1), NSpecs(8), NWillRun(5)))
+			Ω(reporter.End).Should(BeASuiteSummary(true, NPassed(7), NSkipped(3), NPending(1), NSpecs(11), NWillRun(7)))
 		})
 	})
 
@@ -88,6 +108,9 @@ var _ = Describe("Labels", func() {
 		BeforeEach(func() {
 			conf.LabelFilter = "!TopLevelLabel"
 			success, hPF := RunFixture("labelled tests", func() {
+				ReportBeforeSuite(func(r Report) {
+					rt.RunWithData("RBS", "report", r)
+				})
 				BeforeSuite(rt.T("before-suite"))
 				Describe("outer container", func() {
 					It("A", rt.T("A"))
@@ -106,12 +129,18 @@ var _ = Describe("Labels", func() {
 		})
 
 		It("doesn't run anything except for reporters", func() {
-			Ω(rt).Should(HaveTracked("RAE-A", "RAE-B", "RAS"))
+			Ω(rt).Should(HaveTracked("RBS", "RAE-A", "RAE-B", "RAS"))
 		})
 
 		It("skip everything", func() {
 			Ω(reporter.Did.Find("A")).Should(HaveBeenSkipped())
 			Ω(reporter.Did.Find("B")).Should(HaveBeenSkipped())
+		})
+
+		It("reports the correct number of specs to ReportBeforeSuite", func() {
+			report := rt.DataFor("RBS")["report"].(Report)
+			Ω(report.PreRunStats.SpecsThatWillRun).Should(Equal(0))
+			Ω(report.PreRunStats.TotalSpecs).Should(Equal(2))
 		})
 	})
 })

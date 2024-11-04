@@ -43,7 +43,7 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 				GinkgoT().Setenv("GINKGO_PARALLEL_PROTOCOL", protocol)
 
 				var err error
-				reporter = &FakeReporter{}
+				reporter = NewFakeReporter()
 				server, err = parallel_support.NewServer(3, reporter)
 				Ω(err).ShouldNot(HaveOccurred())
 				server.Start()
@@ -232,6 +232,51 @@ var _ = Describe("The Parallel Support Client & Server", func() {
 					server.RegisterAlive(1, aliveFunc(proc1Exited))
 					server.RegisterAlive(2, aliveFunc(proc2Exited))
 					server.RegisterAlive(3, aliveFunc(proc3Exited))
+				})
+
+				Describe("Managing ReportBeforeSuite synchronization", func() {
+					Context("when proc 1 succeeds", func() {
+						It("passes that success along to other procs", func() {
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStatePassed)).Should(Succeed())
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStatePassed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 fails", func() {
+						It("passes that state information along to the other procs", func() {
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStateFailed)).Should(Succeed())
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStateFailed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 disappears before reporting back", func() {
+						It("returns a meaningful error", func() {
+							close(proc1Exited)
+							state, err := client.BlockUntilReportBeforeSuiteCompleted()
+							Ω(state).Should(Equal(types.SpecStateFailed))
+							Ω(err).ShouldNot(HaveOccurred())
+						})
+					})
+
+					Context("when proc 1 hasn't responded yet", func() {
+						It("blocks until it does", func() {
+							done := make(chan interface{})
+							go func() {
+								defer GinkgoRecover()
+								state, err := client.BlockUntilReportBeforeSuiteCompleted()
+								Ω(state).Should(Equal(types.SpecStatePassed))
+								Ω(err).ShouldNot(HaveOccurred())
+								close(done)
+							}()
+							Consistently(done).ShouldNot(BeClosed())
+							Ω(client.PostReportBeforeSuiteCompleted(types.SpecStatePassed)).Should(Succeed())
+							Eventually(done).Should(BeClosed())
+						})
+					})
 				})
 
 				Describe("Managing SynchronizedBeforeSuite synchronization", func() {

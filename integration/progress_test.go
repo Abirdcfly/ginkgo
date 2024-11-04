@@ -46,6 +46,9 @@ var _ = Describe("Emitting progress", func() {
 			//first poll
 			Eventually(session).Should(gbytes.Say(`--poll-progress-after tracks things that take too long \(Spec Runtime: 1\.5\d*s\)`))
 			Eventually(session).Should(gbytes.Say(`>\s*time.Sleep\(2 \* time\.Second\)`))
+			Eventually(session).Should(gbytes.Say(`Begin Additional Progress Reports >>`))
+			Eventually(session).Should(gbytes.Say(`Some global information: 1`))
+			Eventually(session).Should(gbytes.Say(`<< End Additional Progress Reports`))
 
 			//second poll
 			Eventually(session).Should(gbytes.Say(`--poll-progress-after tracks things that take too long \(Spec Runtime: 1\.7\d*s\)`))
@@ -88,91 +91,10 @@ var _ = Describe("Emitting progress", func() {
 
 			Eventually(session.Out.Contents()).Should(ContainSubstring(`Progress Report for Ginkgo Process #1`))
 			Eventually(session.Out.Contents()).Should(ContainSubstring(`Progress Report for Ginkgo Process #2`))
+			Eventually(session.Out.Contents()).Should(ContainSubstring(`Some global information: 1`))
+			Eventually(session.Out.Contents()).Should(ContainSubstring(`Some global information: 2`))
 
 		})
 
-	})
-
-	Describe("the --progress flag", func() {
-		var session *gexec.Session
-		var args []string
-		BeforeEach(func() {
-			args = []string{"--no-color"}
-			fm.MountFixture("progress")
-		})
-
-		JustBeforeEach(func() {
-			session = startGinkgo(fm.PathTo("progress"), args...)
-			Eventually(session).Should(gexec.Exit(0))
-		})
-
-		Context("with the -progress flag, but no -v flag", func() {
-			BeforeEach(func() {
-				args = append(args, "-progress")
-			})
-
-			It("should not emit progress", func() {
-				Ω(session).ShouldNot(gbytes.Say("[bB]efore"))
-			})
-		})
-
-		Context("with the -v flag", func() {
-			BeforeEach(func() {
-				args = append(args, "-v")
-			})
-
-			It("should not emit progress", func() {
-				Ω(session).ShouldNot(gbytes.Say(`\[BeforeEach\]`))
-				Ω(session).Should(gbytes.Say(`>outer before<`))
-			})
-		})
-
-		Context("with the -progress flag and the -v flag", func() {
-			BeforeEach(func() {
-				args = append(args, "-progress", "-v")
-			})
-
-			It("should emit progress (by writing to the GinkgoWriter)", func() {
-				// First spec
-
-				Ω(session).Should(gbytes.Say(`\[BeforeEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer before<`))
-
-				Ω(session).Should(gbytes.Say(`\[BeforeEach\] Inner Context`))
-				Ω(session).Should(gbytes.Say(`>inner before<`))
-
-				Ω(session).Should(gbytes.Say(`\[BeforeEach\] when Inner When`))
-				Ω(session).Should(gbytes.Say(`>inner before<`))
-
-				Ω(session).Should(gbytes.Say(`\[JustBeforeEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer just before<`))
-
-				Ω(session).Should(gbytes.Say(`\[JustBeforeEach\] Inner Context`))
-				Ω(session).Should(gbytes.Say(`>inner just before<`))
-
-				Ω(session).Should(gbytes.Say(`\[It\] should emit progress as it goes`))
-				Ω(session).Should(gbytes.Say(`>it<`))
-
-				Ω(session).Should(gbytes.Say(`\[AfterEach\] Inner Context`))
-				Ω(session).Should(gbytes.Say(`>inner after<`))
-
-				Ω(session).Should(gbytes.Say(`\[AfterEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer after<`))
-
-				// Second spec
-
-				Ω(session).Should(gbytes.Say(`\[BeforeEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer before<`))
-
-				Ω(session).Should(gbytes.Say(`\[JustBeforeEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer just before<`))
-
-				Ω(session).Should(gbytes.Say(`\[It\] should emit progress as it goes`))
-				Ω(session).Should(gbytes.Say(`>specify<`))
-
-				Ω(session).Should(gbytes.Say(`\[AfterEach\] ProgressFixture`))
-				Ω(session).Should(gbytes.Say(`>outer after<`))
-			})
-		})
 	})
 })

@@ -14,12 +14,17 @@ var _ = Describe("Decorations test", func() {
 		customIt := func() {
 			It("is-offset", rt.T("is-offset"), Offset(1))
 		}
+		otherCustomIt := func() {
+			GinkgoHelper()
+			It("is-also-offset", rt.T("is-also-offset"))
+		}
 		var countFlaky = 0
 		var countRepeat = 0
 		success, _ := RunFixture("happy-path decoration test", func() {
 			Describe("top-level-container", func() {
 				clForOffset = types.NewCodeLocation(0)
 				customIt()
+				otherCustomIt()
 				It("flaky", FlakeAttempts(4), rt.T("flaky", func() {
 					countFlaky += 1
 					outputInterceptor.AppendInterceptedOutput("so flaky\n")
@@ -56,6 +61,7 @@ var _ = Describe("Decorations test", func() {
 	It("runs all the test nodes in the expected order", func() {
 		Ω(rt).Should(HaveTracked(
 			"is-offset",
+			"is-also-offset",
 			"flaky", "flaky", "flaky",
 			"flaky-never-passes", "flaky-never-passes",
 			"flaky-skips",
@@ -72,18 +78,44 @@ var _ = Describe("Decorations test", func() {
 		})
 	})
 
+	Describe("GinkgoHelper", func() {
+		It("correctly skips through the stack trace when computing the codelocation", func() {
+			clForOffset.LineNumber = clForOffset.LineNumber + 2
+			Ω(reporter.Did.Find("is-also-offset").LeafNodeLocation).Should(Equal(clForOffset))
+		})
+	})
+
 	Describe("FlakeAttempts", func() {
 		It("reruns specs until they pass or until the number of flake attempts is exhausted, but does not rerun skipped specs", func() {
-			Ω(reporter.Did.Find("flaky")).Should(HavePassed(NumAttempts(3), CapturedStdOutput("so flaky\nso flaky\nso flaky\n"), CapturedGinkgoWriterOutput("so tasty\n\nGinkgo: Attempt #1 Failed.  Retrying...\nso tasty\n\nGinkgo: Attempt #2 Failed.  Retrying...\nso tasty\n")))
+			Ω(reporter.Did.Find("flaky")).Should(HavePassed(NumAttempts(3), CapturedStdOutput("so flaky\nso flaky\nso flaky\n"), CapturedGinkgoWriterOutput("so tasty\nso tasty\nso tasty\n")))
+			Ω(reporter.Did.Find("flaky").Timeline()).Should(BeTimelineContaining(
+				BeSpecEvent(types.SpecEventSpecRetry, 1),
+				BeSpecEvent(types.SpecEventSpecRetry, 2),
+			))
 			Ω(reporter.Did.Find("flaky-never-passes")).Should(HaveFailed("fail", NumAttempts(2)))
+			Ω(reporter.Did.Find("flaky-never-passes").Timeline()).Should(BeTimelineContaining(
+				BeSpecEvent(types.SpecEventSpecRetry, 1),
+			))
 			Ω(reporter.Did.Find("flaky-skips")).Should(HaveBeenSkippedWithMessage("skip", NumAttempts(1)))
+			Ω(reporter.Did.Find("flaky-skips").Timeline()).ShouldNot(BeTimelineContaining(
+				BeSpecEvent(types.SpecEventSpecRetry, 1),
+			))
 		})
 	})
 
 	Describe("MustPassRepeatedly", func() {
 		It("reruns specs until they fail or until the number of MustPassRepeatedly attempts is exhausted, but does not rerun skipped specs", func() {
-			Ω(reporter.Did.Find("repeat")).Should(HaveFailed(NumAttempts(3), CapturedStdOutput("repeats a bit\nrepeats a bit\nrepeats a bit\n"), CapturedGinkgoWriterOutput("here we go\n\nGinkgo: Attempt #1 Passed.  Repeating...\nhere we go\n\nGinkgo: Attempt #2 Passed.  Repeating...\nhere we go\n")))
+			Ω(reporter.Did.Find("repeat")).Should(HaveFailed(NumAttempts(3), CapturedStdOutput("repeats a bit\nrepeats a bit\nrepeats a bit\n"), CapturedGinkgoWriterOutput("here we go\nhere we go\nhere we go\n")))
+			Ω(reporter.Did.Find("repeat").Timeline()).Should(BeTimelineContaining(
+				BeSpecEvent(types.SpecEventSpecRepeat, 1, TLWithOffset("here we go\n")),
+				BeSpecEvent(types.SpecEventSpecRepeat, 2, TLWithOffset("here we go\nhere we go\n")),
+			))
+
 			Ω(reporter.Did.Find("repeat-never-fails")).Should(HavePassed("passed", NumAttempts(2)))
+			Ω(reporter.Did.Find("repeat-never-fails").Timeline()).Should(BeTimelineContaining(
+				BeSpecEvent(types.SpecEventSpecRepeat, 1),
+			))
+
 			Ω(reporter.Did.Find("repeat-skips")).Should(HaveBeenSkippedWithMessage("skip", NumAttempts(1)))
 		})
 	})

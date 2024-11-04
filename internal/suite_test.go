@@ -1,7 +1,6 @@
 package internal_test
 
 import (
-	"fmt"
 	"io"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,7 +28,7 @@ var _ = Describe("Suite", func() {
 
 	BeforeEach(func() {
 		failer = internal.NewFailer()
-		reporter = &FakeReporter{}
+		reporter = NewFakeReporter()
 		writer = internal.NewWriter(io.Discard)
 		outputInterceptor = NewFakeOutputInterceptor()
 		client = nil
@@ -57,7 +56,6 @@ var _ = Describe("Suite", func() {
 			})
 
 			It("only traverses top-level containers when told to BuildTree", func() {
-				fmt.Fprintln(GinkgoWriter, "HELLO!")
 				Ω(rt).Should(HaveTrackedNothing())
 				Ω(suite.BuildTree()).Should(Succeed())
 				Ω(rt).Should(HaveTracked("traversing outer", "traversing nested"))
@@ -70,6 +68,57 @@ var _ = Describe("Suite", func() {
 				Ω(err2).ShouldNot(HaveOccurred())
 				Ω(err3).ShouldNot(HaveOccurred())
 			})
+		})
+
+		Describe("cloning a suite", func() {
+			var err1, err2, err3 error
+			BeforeEach(func() {
+				suite.PushNode(N(types.NodeTypeBeforeSuite, "before suite", func() {
+					rt.Run("before-suite")
+				}))
+				err1 = suite.PushNode(N(ntCon, "a top-level container", func() {
+					rt.Run("traversing outer")
+					err2 = suite.PushNode(N(ntCon, "a nested container", func() {
+						rt.Run("traversing nested")
+						err3 = suite.PushNode(N(ntIt, "an it", rt.T("running it")))
+					}))
+				}))
+			})
+
+			It("fails if the tree has already been built", func() {
+				Ω(suite.BuildTree()).Should(Succeed())
+				_, err := suite.Clone()
+				Ω(err).Should(MatchError("cannot clone suite after tree has been built"))
+			})
+
+			It("generates the same tree as the original", func() {
+				clone, err := suite.Clone()
+				Ω(err).ShouldNot(HaveOccurred())
+
+				Ω(suite.BuildTree()).Should(Succeed())
+				Ω(rt).Should(HaveTracked("traversing outer", "traversing nested"))
+				rt.Reset()
+				suite.Run("suite", Labels{}, "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, internal.RegisterForProgressSignal, conf)
+				Ω(rt).Should(HaveTracked("before-suite", "running it"))
+
+				Ω(err1).ShouldNot(HaveOccurred())
+				Ω(err2).ShouldNot(HaveOccurred())
+				Ω(err3).ShouldNot(HaveOccurred())
+
+				suite = clone // this is what the swapping of globals looks in reality
+
+				rt.Reset()
+				Ω(clone.BuildTree()).Should(Succeed())
+				Ω(rt).Should(HaveTracked("traversing outer", "traversing nested"))
+				rt.Reset()
+				clone.Run("suite", Labels{}, "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, internal.RegisterForProgressSignal, conf)
+				Ω(rt).Should(HaveTracked("before-suite", "running it"))
+
+				Ω(err1).ShouldNot(HaveOccurred())
+				Ω(err2).ShouldNot(HaveOccurred())
+				Ω(err3).ShouldNot(HaveOccurred())
+			})
+
 		})
 
 		Describe("InRunPhase", func() {
@@ -238,6 +287,39 @@ var _ = Describe("Suite", func() {
 				})
 			})
 
+			Context("when pushing a ContinueOnFailure Ordered container", func() {
+				Context("that is the top-level Ordered container", func() {
+					It("succeeds", func() {
+						var errors = make([]error, 3)
+						errors[0] = suite.PushNode(N(ntCon, "top-level-container", func() {
+							errors[1] = suite.PushNode(N(ntCon, "ordered-container", Ordered, ContinueOnFailure, func() {
+								errors[2] = suite.PushNode(N(types.NodeTypeIt, "spec", func() {}))
+							}))
+						}))
+						Ω(errors[0]).ShouldNot(HaveOccurred())
+						Ω(suite.BuildTree()).Should(Succeed())
+						Ω(errors[1]).ShouldNot(HaveOccurred())
+						Ω(errors[2]).ShouldNot(HaveOccurred())
+					})
+				})
+
+				Context("that is nested in another Ordered container", func() {
+					It("errors", func() {
+						var errors = make([]error, 3)
+
+						errors[0] = suite.PushNode(N(ntCon, "top-level-container", Ordered, func() {
+							errors[1] = suite.PushNode(N(ntCon, "ordered-container", cl, Ordered, ContinueOnFailure, func() {
+								errors[2] = suite.PushNode(N(types.NodeTypeIt, "spec", func() {}))
+							}))
+						}))
+						Ω(errors[0]).ShouldNot(HaveOccurred())
+						Ω(suite.BuildTree()).Should(Succeed())
+						Ω(errors[1]).Should(MatchError(types.GinkgoErrors.InvalidContinueOnFailureDecoration(cl)))
+						Ω(errors[2]).ShouldNot(HaveOccurred())
+					})
+				})
+			})
+
 			Context("when pushing a suite node during PhaseBuildTree", func() {
 				It("errors", func() {
 					var pushSuiteNodeErr error
@@ -327,6 +409,28 @@ var _ = Describe("Suite", func() {
 
 					suite.Run("suite", Labels{}, "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, internal.RegisterForProgressSignal, conf)
 					Ω(errors[3]).Should(MatchError(types.GinkgoErrors.PushingCleanupInReportingNode(cl, types.NodeTypeReportAfterEach)))
+				})
+			})
+
+			Context("when pushing a cleanup node in a ReportBeforeSuite node", func() {
+				It("errors", func() {
+					var errors = make([]error, 4)
+					reportBeforeSuiteNode := N(types.NodeTypeReportBeforeSuite, "", func(_ types.Report) {
+						errors[3] = suite.PushNode(N(types.NodeTypeCleanupInvalid, cl))
+					}, types.NewCodeLocation(0))
+
+					errors[0] = suite.PushNode(N(ntCon, "container", func() {
+						errors[2] = suite.PushNode(N(ntIt, "test"))
+					}))
+					errors[1] = suite.PushNode(reportBeforeSuiteNode)
+					Ω(errors[0]).ShouldNot(HaveOccurred())
+					Ω(errors[1]).ShouldNot(HaveOccurred())
+
+					Ω(suite.BuildTree()).Should(Succeed())
+					Ω(errors[2]).ShouldNot(HaveOccurred())
+
+					suite.Run("suite", Labels{}, "/path/to/suite", failer, reporter, writer, outputInterceptor, interruptHandler, client, internal.RegisterForProgressSignal, conf)
+					Ω(errors[3]).Should(MatchError(types.GinkgoErrors.PushingCleanupInReportingNode(cl, types.NodeTypeReportBeforeSuite)))
 				})
 			})
 

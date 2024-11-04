@@ -105,13 +105,28 @@ var _ = Describe("Profiling Specs", func() {
 				coverPkgFlag := fmt.Sprintf("-coverpkg=%s,%s", fm.PackageNameFor("coverage"), fm.PackageNameFor("coverage/external_coverage"))
 				seriesSession := startGinkgo(fm.PathTo("coverage"), coverPkgFlag)
 				Eventually(seriesSession).Should(gexec.Exit(0))
-				Ω(seriesSession.Out).Should(gbytes.Say("coverage: 71.4% of statements in"))
+				Ω(seriesSession.Out).Should(gbytes.Say(`coverage: (80\.0|71\.4)% of statements in`))
 				seriesCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
 				fm.RemoveFile("coverage", "coverprofile.out")
 
 				parallelSession := startGinkgo(fm.PathTo("coverage"), "--no-color", "--procs=2", coverPkgFlag)
 				Eventually(parallelSession).Should(gexec.Exit(0))
-				Ω(parallelSession.Out).Should(gbytes.Say(`coverage: 71\.4% of statements`))
+				Ω(parallelSession.Out).Should(gbytes.Say(`coverage: (80\.0|71\.4)% of statements`))
+				parallelCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
+
+				Ω(parallelCoverage).Should(Equal(seriesCoverage))
+			})
+
+			It("supports ./...", func() {
+				seriesSession := startGinkgo(fm.PathTo("coverage"), "-coverpkg=./...", "-r")
+				Eventually(seriesSession).Should(gexec.Exit(0))
+				Ω(seriesSession.Out).Should(gbytes.Say(`composite coverage: 100\.0% of statements`))
+				seriesCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
+				fm.RemoveFile("coverage", "coverprofile.out")
+
+				parallelSession := startGinkgo(fm.PathTo("coverage"), "--no-color", "--procs=2", "-coverpkg=./...", "-r")
+				Eventually(parallelSession).Should(gexec.Exit(0))
+				Ω(parallelSession.Out).Should(gbytes.Say(`composite coverage: 100\.0% of statements`))
 				parallelCoverage := processCoverageProfile(fm.PathTo("coverage", "coverprofile.out"))
 
 				Ω(parallelCoverage).Should(Equal(seriesCoverage))
@@ -237,13 +252,14 @@ var _ = Describe("Profiling Specs", func() {
 				// The MutexProfile for the lock_contest test should list two functions that wait on a lock.
 				// Unfortunately go doesn't seem to capture the names of the functions - so they're listed here as
 				// lock_contest_test.glob..func1.1 is called 10 times and takes ~5ms per call
-				// lock_contest_test.glob..func2.1 is called once and teakes ~500ms per call
+				// lock_contest_test.glob..func2.1 is called once and takes ~500ms per call
+				// Note that in Go 1.22 and later, the functions are called lock_contest_test.init.func1.1 and lock_contest_test.init.func2.1
 				// Asserting that both times are within a range should be stable across tests.  The function names should be as well
 				// but that might become a source of failure in the future
 				// Note: these numbers are adjusted slightly to tolerate variance during test runs
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func1.1").CumStat).Should(BeNumerically(">=", 45))
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func1.1").CumStat).Should(BeNumerically("<", 500))
-				Ω(mutexProfile.FindCaller("lock_contest_test.glob..func2.1").CumStat).Should(BeNumerically(">=", 450))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc1.1", lockContestPrefix)).CumStat).Should(BeNumerically(">=", 45))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc1.1", lockContestPrefix)).CumStat).Should(BeNumerically("<", 500))
+				Ω(mutexProfile.FindCaller(fmt.Sprintf("%sfunc2.1", lockContestPrefix)).CumStat).Should(BeNumerically(">=", 450))
 			},
 
 			Entry("when running in series",
@@ -347,7 +363,12 @@ var _ = Describe("Profiling Specs", func() {
 					"coverage.test", "coverage_block.out", "coverage_coverprofile.out", "coverage_cpu.out", "coverage_mem.out", "coverage_mutex.out",
 					"focused.test", "focused_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
 					"focused_internal.test", "focused_internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
-				))
+					"coverage_additional_spec.test",
+					"coverage_additional_spec_block.out",
+					"coverage_additional_spec_coverprofile.out",
+					"coverage_additional_spec_cpu.out",
+					"coverage_additional_spec_mem.out",
+					"coverage_additional_spec_mutex.out"))
 			})
 		})
 
@@ -408,7 +429,12 @@ var _ = Describe("Profiling Specs", func() {
 						"coverprofile.out",
 						"coverage.test", "coverage_block.out", "coverage_cpu.out", "coverage_mem.out", "coverage_mutex.out",
 						"focused.test", "focused_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
-						"focused_internal.test", "focused_internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty
+						"focused_internal.test", "focused_internal_cpu.out", //this is an inconsistency in go test where the cpu.out file is generated but empty,
+						"coverage_additional_spec.test",
+						"coverage_additional_spec_block.out",
+						"coverage_additional_spec_cpu.out",
+						"coverage_additional_spec_mem.out",
+						"coverage_additional_spec_mutex.out",
 					))
 				})
 			})

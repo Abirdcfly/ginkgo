@@ -1,15 +1,12 @@
 package integration_test
 
 import (
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 
 	. "github.com/onsi/ginkgo/v2/internal/test_helpers"
-	"github.com/onsi/ginkgo/v2/types"
 )
 
 var _ = Describe("Filter", func() {
@@ -24,7 +21,7 @@ var _ = Describe("Filter", func() {
 			"--focus-file=sprocket", "--focus-file=widget:1-24", "--focus-file=_b:24-42",
 			"--skip-file=_c",
 			"--json-report=report.json",
-			"--label-filter=TopLevelLabel && !SLOW",
+			"--label-filter=TopLevelLabel && !SLOW && !(Feature: containsAny Alpha)",
 		)
 		Eventually(session).Should(gexec.Exit(0))
 		specs := Reports(fm.LoadJSONReports("filter", "report.json")[0].SpecReports)
@@ -46,6 +43,8 @@ var _ = Describe("Filter", func() {
 			"SprocketA cat", "SprocketB cat", "WidgetA cat", "WidgetB cat", "More WidgetB cat",
 			// fish is in -focus but cat is in -skip
 			"SprocketA cat fish", "SprocketB cat fish", "WidgetA cat fish", "WidgetB cat fish", "More WidgetB cat fish",
+			// Tests with Feature:Alpha
+			"WidgetB fish",
 			// Tests labelled 'slow'
 			"WidgetB dog",
 			"SprocketB fish",
@@ -76,14 +75,10 @@ var _ = Describe("Filter", func() {
 			"--focus=", "--skip=",
 			"--json-report=report.json",
 		)
-		Eventually(session).Should(gexec.Exit(types.GINKGO_FOCUS_EXIT_CODE))
+		Eventually(session).Should(gexec.Exit(0))
 		specs := Reports(fm.LoadJSONReports("filter", "report.json")[0].SpecReports)
 		for _, spec := range specs {
-			if strings.HasPrefix(spec.FullText(), "SprocketC") {
-				Ω(spec).Should(HavePassed())
-			} else {
-				Ω(spec).Should(Or(HaveBeenSkipped(), BePending()))
-			}
+			Ω(spec).Should(SatisfyAny(HavePassed(), BePending()))
 		}
 	})
 
@@ -102,7 +97,7 @@ var _ = Describe("Filter", func() {
 		It("can list labels", func() {
 			session := startGinkgo(fm.TmpDir, "labels", "-r")
 			Eventually(session).Should(gexec.Exit(0))
-			Ω(session).Should(gbytes.Say(`filter: \["TopLevelLabel", "slow"\]`))
+			Ω(session).Should(gbytes.Say(`filter: \["Feature:Alpha", "Feature:Beta", "TopLevelLabel", "slow"\]`))
 			Ω(session).Should(gbytes.Say(`labels: \["beluga", "bird", "cat", "chicken", "cow", "dog", "giraffe", "koala", "monkey", "otter", "owl", "panda"\]`))
 			Ω(session).Should(gbytes.Say(`nolabels: No labels found`))
 			Ω(session).Should(gbytes.Say(`onepkg: \["beluga", "bird", "cat", "chicken", "cow", "dog", "giraffe", "koala", "monkey", "otter", "owl", "panda"\]`))

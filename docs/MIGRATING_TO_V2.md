@@ -391,7 +391,7 @@ Ginkgo can now repeat a test suite N additional times by running `ginkgo --repea
 Ginkgo requires the tests to succeed during each repetition in order to consider the test run a success.
 
 ### New: --focus-file and --skip-file
-You can now tell Ginkgo to only run specs that match (or don't match) a given file filter.  You can filter by filename as well as file:line.  See the [Filtering Specs](onsi.github.io/ginkgo/#filtering-specs) documentation for more details.
+You can now tell Ginkgo to only run specs that match (or don't match) a given file filter.  You can filter by filename as well as file:line.  See the [Filtering Specs](https://onsi.github.io/ginkgo/#filtering-specs) documentation for more details.
 
 ### Improved: windows support for capturing stdout and stderr
 In V1 Ginkgo would run windows tests in parallel with the `--stream` option.  This would result in hard-to-understand interleaved output.  The reason behind this design choice was that it proved challenging to intercept all stdout and stderr output on Windows.  V2 implements a best-effort output interception scheme for windows that entails reassigning the global `os.Stdout` and `os.Stderr` variables.  While not as bullet-proof as the Unix `syscall.Dup2` based implementation, this is likely good enough for most usecases and allows Ginkgo support on Windows to come into parity with unix.
@@ -427,7 +427,7 @@ It("...", func(done Done) {
 will emit a deprecation warning and will run **synchronously**.  This means the `timeout` will not be enforced and the status of the `Done` channel will be ignored - a test that hangs will hang indefinitely.
 
 #### Migration Strategy:
-We recommend users make targeted use of Gomega's [Asynchronous Assertions](https://onsi.github.io/gomega/#making-asynchronous-assertions) to better test asynchronous behavior.  In addition, as of Ginkgo 2.3.0, users can [make individual nodes interruptible and reintroduce the notion of spec timeouts]((https://onsi.github.io/ginkgo/#spec-timeouts-and-interruptible-nodes)).
+We recommend users make targeted use of Gomega's [Asynchronous Assertions](https://onsi.github.io/gomega/#making-asynchronous-assertions) to better test asynchronous behavior.  In addition, as of Ginkgo 2.3.0, users can [make individual nodes interruptible and reintroduce the notion of spec timeouts](https://onsi.github.io/ginkgo/#spec-timeouts-and-interruptible-nodes).
 
 As a first migration pass that produces **equivalent behavior** users can replace asynchronous tests with:
 

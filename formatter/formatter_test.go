@@ -1,6 +1,7 @@
 package formatter_test
 
 import (
+	"os"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,6 +15,17 @@ var _ = Describe("Formatter", func() {
 
 	BeforeEach(func() {
 		colorMode = formatter.ColorModeTerminal
+		os.Unsetenv("GINKGO_CLI_COLOR_RED")
+		os.Unsetenv("GINKGO_CLI_COLOR_ORANGE")
+		os.Unsetenv("GINKGO_CLI_COLOR_CORAL")
+		os.Unsetenv("GINKGO_CLI_COLOR_MAGENTA")
+		os.Unsetenv("GINKGO_CLI_COLOR_GREEN")
+		os.Unsetenv("GINKGO_CLI_COLOR_DARK_GREEN")
+		os.Unsetenv("GINKGO_CLI_COLOR_YELLOW")
+		os.Unsetenv("GINKGO_CLI_COLOR_LIGHT_YELLOW")
+		os.Unsetenv("GINKGO_CLI_COLOR_CYAN")
+		os.Unsetenv("GINKGO_CLI_COLOR_LIGHT_GRAY")
+		os.Unsetenv("GINKGO_CLI_COLOR_BLUE")
 	})
 
 	JustBeforeEach(func() {
@@ -50,6 +62,47 @@ var _ = Describe("Formatter", func() {
 		})
 	})
 
+	DescribeTable("with environment overrides",
+		func(envVars map[string]string, input, expected string) {
+			for envVar, value := range envVars {
+				os.Setenv(envVar, value)
+			}
+			f := formatter.New(colorMode)
+			Ω(f.F(input)).Should(Equal(expected))
+			for envVar := range envVars {
+				os.Unsetenv(envVar)
+			}
+		},
+
+		Entry("uses default for too low codes", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "-1",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;9mhi there\x1b[0m"),
+
+		Entry("uses default for too high codes", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "256",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;9mhi there\x1b[0m"),
+
+		Entry("supports literal alias for 8bit color", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "red",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;1mhi there\x1b[0m"),
+
+		Entry("supports number alias for 8bit color", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "1",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;1mhi there\x1b[0m"),
+
+		Entry("supports 16bit colors (bright)", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "9",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;9mhi there\x1b[0m"),
+
+		Entry("supports 16bit color literal aliases (bright)", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "bright-red",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;9mhi there\x1b[0m"),
+
+		Entry("supports extended 256 colors", map[string]string{
+			"GINKGO_CLI_COLOR_RED": "16",
+		}, "{{red}}hi there{{/}}", "\x1b[38;5;16mhi there\x1b[0m"),
+	)
+
 	Describe("NewWithNoColorBool", func() {
 		Context("when the noColor bool is true", func() {
 			It("strips out color information", func() {
@@ -69,6 +122,10 @@ var _ = Describe("Formatter", func() {
 	Describe("F", func() {
 		It("transforms the color information and sprintfs", func() {
 			Ω(f.F("{{green}}hi there {{cyan}}%d {{yellow}}%s{{/}}", 3, "wise men")).Should(Equal("\x1b[38;5;10mhi there \x1b[38;5;14m3 \x1b[38;5;11mwise men\x1b[0m"))
+		})
+
+		It("avoids sprintf if there are no additional arguments", func() {
+			Ω(f.F("{{green}}hi there {{cyan}}%d {{yellow}}%s{{/}}")).Should(Equal("\x1b[38;5;10mhi there \x1b[38;5;14m%d \x1b[38;5;11m%s\x1b[0m"))
 		})
 	})
 

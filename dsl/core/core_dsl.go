@@ -1,7 +1,7 @@
 /*
 Ginkgo is usually dot-imported via:
 
-    import . "github.com/onsi/ginkgo/v2"
+	import . "github.com/onsi/ginkgo/v2"
 
 however some parts of the DSL may conflict with existing symbols in the user's code.
 
@@ -21,15 +21,21 @@ const GINKGO_VERSION = ginkgo.GINKGO_VERSION
 type GinkgoWriterInterface = ginkgo.GinkgoWriterInterface
 type GinkgoTestingT = ginkgo.GinkgoTestingT
 type GinkgoTInterface = ginkgo.GinkgoTInterface
+type FullGinkgoTInterface = ginkgo.FullGinkgoTInterface
 type SpecContext = ginkgo.SpecContext
+type GinkgoTBWrapper = ginkgo.GinkgoTBWrapper
 
 var GinkgoWriter = ginkgo.GinkgoWriter
+var GinkgoLogr = ginkgo.GinkgoLogr
 var GinkgoConfiguration = ginkgo.GinkgoConfiguration
 var GinkgoRandomSeed = ginkgo.GinkgoRandomSeed
 var GinkgoParallelProcess = ginkgo.GinkgoParallelProcess
+var GinkgoHelper = ginkgo.GinkgoHelper
+var GinkgoLabelFilter = ginkgo.GinkgoLabelFilter
 var PauseOutputInterception = ginkgo.PauseOutputInterception
 var ResumeOutputInterception = ginkgo.ResumeOutputInterception
 var RunSpecs = ginkgo.RunSpecs
+var PreviewSpecs = ginkgo.PreviewSpecs
 var Skip = ginkgo.Skip
 var Fail = ginkgo.Fail
 var AbortSuite = ginkgo.AbortSuite
@@ -58,3 +64,5 @@ var BeforeAll = ginkgo.BeforeAll
 var AfterAll = ginkgo.AfterAll
 var DeferCleanup = ginkgo.DeferCleanup
 var GinkgoT = ginkgo.GinkgoT
+var GinkgoTB = ginkgo.GinkgoTB
+var AttachProgressReporter = ginkgo.AttachProgressReporter

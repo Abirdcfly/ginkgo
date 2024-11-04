@@ -155,7 +155,7 @@ var _ = Describe("Focus", func() {
 					S(N("green dragon"), N()),
 					S(N(Pending), N("blue Dragon")),
 					S(N("yellow dragon")),
-					S(N(Focus, "yellow dragon")),
+					S(N("yellow dragon")),
 				}
 			})
 
@@ -218,7 +218,7 @@ var _ = Describe("Focus", func() {
 					S(N(CL("file_b", 3, "file_b", 15))), //include because "file_:15-21" is in FocusFiles
 					S(N(CL("file_b", 17))),              //skip because "_b:17" is in SkipFiles
 					S(N(CL("file_b", 20), Pending)),     //skip because spec is flagged pending
-					S(N(CL("c", 3), Focus)),             //skip because "c" is not in FocusFiles - override programmatic focus
+					S(N(CL("c", 3))),                    //skip because "c" is not in FocusFiles
 					S(N(CL("d", 17))),                   //include because "d " is in FocusFiles
 				}
 
@@ -240,7 +240,7 @@ var _ = Describe("Focus", func() {
 					S(N(ntCon, Label("cat", "dog")), N(ntIt, "A", Label("fish"))),  //skip because fish
 					S(N(ntCon, Label("cat", "dog")), N(ntIt, "B", Label("apple"))), //include because has cat and not fish
 					S(N(ntCon, Label("dog")), N(ntIt, "C", Label("apple"))),        //skip because no cat or cow
-					S(N(ntCon, Label("cow")), N(ntIt, "D", Label("fish"), Focus)),  //skip because fish, override focus
+					S(N(ntCon, Label("cow")), N(ntIt, "D", Label("fish"))),         //skip because fish
 					S(N(ntCon, Label("cow")), N(ntIt, "E")),                        //include because cow and no fish
 					S(N(ntCon, Label("cow")), N(ntIt, "F", Pending)),               //skip because pending
 				}
@@ -249,6 +249,27 @@ var _ = Describe("Focus", func() {
 			It("applies the label filters", func() {
 				specs, hasProgrammaticFocus := internal.ApplyFocusToSpecs(specs, description, suiteLabels, conf)
 				Ω(harvestSkips(specs)).Should(Equal([]bool{true, false, true, true, false, true}))
+				Ω(hasProgrammaticFocus).Should(BeFalse())
+
+			})
+		})
+
+		Context("when configured with a label set filter", func() {
+			BeforeEach(func() {
+				conf.LabelFilter = "Feature: consistsOf {A, B} || Feature: containsAny C"
+				specs = Specs{
+					S(N(ntCon, Label("Feature:A", "dog")), N(ntIt, "A", Label("fish"))),               //skip because fish no feature:B
+					S(N(ntCon, Label("Feature:A", "dog")), N(ntIt, "B", Label("apple", "Feature:B"))), //include because has Feature:A and Feature:B
+					S(N(ntCon, Label("Feature:A")), N(ntIt, "C", Label("Feature:B", "Feature:D"))),    //skip because it has Feature:D
+					S(N(ntCon, Label("Feature:C")), N(ntIt, "D", Label("fish", "Feature:D"))),         //include because it has Feature:C
+					S(N(ntCon, Label("cow")), N(ntIt, "E")),                                           //skip because no Feature:
+					S(N(ntCon, Label("Feature:A", "Feature:B")), N(ntIt, "F", Pending)),               //skip because pending
+				}
+			})
+
+			It("applies the label filters", func() {
+				specs, hasProgrammaticFocus := internal.ApplyFocusToSpecs(specs, description, suiteLabels, conf)
+				Ω(harvestSkips(specs)).Should(Equal([]bool{true, false, true, false, true, true}))
 				Ω(hasProgrammaticFocus).Should(BeFalse())
 
 			})
@@ -277,7 +298,7 @@ var _ = Describe("Focus", func() {
 					S(N("dog cat", CL("file_b", 3, "file_b", 15), Label("brown"))), //skip because "file_:15-21" is in FocusFiles but "cat" is in SkipStirngs
 					S(N("fish", CL("file_b", 17), Label("brown"))),                 //skip because "_b:17" is in SkipFiles, even though "fish" is in FocusStrings
 					S(N("biscuit", CL("file_b", 20), Pending, Label("brown"))),     //skip because spec is flagged pending
-					S(N("pony", CL("c", 3), Focus, Label("brown"))),                //skip because "c" is not in FocusFiles or FocusStrings - override programmatic focus
+					S(N("pony", CL("c", 3), Label("brown"))),                       //skip because "c" is not in FocusFiles or FocusStrings
 					S(N("goat", CL("d", 17), Label("brown"))),                      //skip because "goat" is in FocusStrings but "d" is not in FocusFiles
 				}
 
@@ -292,6 +313,33 @@ var _ = Describe("Focus", func() {
 				specs, hasProgrammaticFocus := internal.ApplyFocusToSpecs(specs, description, suiteLabels, conf)
 				Ω(harvestSkips(specs)).Should(Equal([]bool{false, true, true, true, true, true, true}))
 				Ω(hasProgrammaticFocus).Should(BeFalse())
+			})
+		})
+
+		Context("when configured with focus/skip files, focus/skip strings, and label filters and there is a programmatic focus", func() {
+			BeforeEach(func() {
+				specs = Specs{
+					S(N("dog", CL("file_a", 1), Label("brown"))),                   //skip because "file_:1" is in FocusFiles and "dog" is in FocusStrings and has "brown" label but a different spec has a programmatic focus
+					S(N("dog", CL("file_a", 17), Label("brown"), Focus)),           //include because "file_:15-21" is in FocusFiles and "dog" is in FocusStrings and has "brown" label
+					S(N("dog", CL("file_a", 1), Label("white"), Focus)),            //skip because does not have "brown" label
+					S(N("dog cat", CL("file_b", 3, "file_b", 15), Label("brown"))), //skip because "file_:15-21" is in FocusFiles but "cat" is in SkipStirngs
+					S(N("fish", CL("file_b", 17), Label("brown"))),                 //skip because "_b:17" is in SkipFiles, even though "fish" is in FocusStrings
+					S(N("biscuit", CL("file_b", 20), Pending, Label("brown"))),     //skip because spec is flagged pending
+					S(N("pony", CL("c", 3), Label("brown"))),                       //skip because "c" is not in FocusFiles or FocusStrings
+					S(N("goat", CL("d", 17), Label("brown"))),                      //skip because "goat" is in FocusStrings but "d" is not in FocusFiles
+				}
+
+				conf.FocusFiles = []string{"file_:1,15-21"}
+				conf.SkipFiles = []string{"_b:17"}
+				conf.FocusStrings = []string{"goat", "dog", "fish", "biscuit"}
+				conf.SkipStrings = []string{"cat"}
+				conf.LabelFilter = "brown"
+			})
+
+			It("applies all filters", func() {
+				specs, hasProgrammaticFocus := internal.ApplyFocusToSpecs(specs, description, suiteLabels, conf)
+				Ω(harvestSkips(specs)).Should(Equal([]bool{true, false, true, true, true, true, true, true}))
+				Ω(hasProgrammaticFocus).Should(BeTrue())
 			})
 		})
 	})
